@@ -89,6 +89,8 @@
 </template>
 
 <script>
+import api from "../Api";
+
 // visibility filters
 let filters = {
   all: function(todos) {
@@ -126,13 +128,17 @@ const Todos = {
   },
 
   mounted() {
-    // inject some startup data
-    this.todos = [
-      { title: "Drink coffee", completed: false },
-      { title: "Write REST API", completed: false }
-    ];
-    // hide the loading message
-    this.loading = false;
+    api
+      .getAll()
+      .then(response => {
+        this.$log.debug("Data loaded: ", response.data);
+        this.todos = response.data;
+      })
+      .catch(error => {
+        this.$log.debug(error);
+        this.error = "Failed to load todos";
+      })
+      .finally(() => (this.loading = false));
   },
 
   // computed properties
@@ -179,10 +185,20 @@ const Todos = {
         return;
       }
 
-      this.todos.push({
-        title: value,
-        completed: false
-      });
+      api
+        .createNew(value, false)
+        .then(response => {
+          this.$log.debug("New item created:", response);
+          this.todos.push({
+            id: response.data.id,
+            title: value,
+            completed: false
+          });
+        })
+        .catch(error => {
+          this.$log.debug(error);
+          this.error = "Failed to add todo";
+        });
 
       this.newTodo = "";
     },
@@ -191,11 +207,31 @@ const Todos = {
       this.visibility = vis;
     },
 
-    // completeTodo(todo) {},
-
+    completeTodo(todo) {
+      api
+        .updateForId(todo.id, todo.title, todo.completed)
+        .then(response => {
+          this.$log.info("Item updated:", response.data);
+        })
+        .catch(error => {
+          this.$log.debug(error);
+          todo.completed = !todo.completed;
+          this.error = "Failed to update todo";
+        });
+    },
     removeTodo: function(todo) {
       // notice NOT using "=>" syntax
-      this.todos.splice(this.todos.indexOf(todo), 1);
+      api
+        .removeForId(todo.id)
+        .then(() => {
+          // notice AM using "=>" syntax
+          this.$log.debug("Item removed:", todo);
+          this.todos.splice(this.todos.indexOf(todo), 1);
+        })
+        .catch(error => {
+          this.$log.debug(error);
+          this.error = "Failed to remove todo";
+        });
     },
 
     editTodo: function(todo) {
@@ -207,9 +243,19 @@ const Todos = {
       if (!this.editedTodo) {
         return;
       }
-
-      this.editedTodo = null;
-      todo.title = todo.title.trim();
+      this.$log.info("Item updated:", todo);
+      api
+        .updateForId(todo.id, todo.title.trim(), todo.completed)
+        .then(response => {
+          this.$log.info("Item updated:", response.data);
+          this.editedTodo = null;
+          todo.title = todo.title.trim();
+        })
+        .catch(error => {
+          this.$log.debug(error);
+          this.cancelEdit(todo);
+          this.error = "Failed to update todo";
+        });
 
       if (!todo.title) {
         this.removeTodo(todo);
